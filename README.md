@@ -1,6 +1,6 @@
 IDA-ClrNative
 =============
 
-IDA script to apply information stored in mixed managed/native assemblies to the native code portion
+ClrNative is an IDAPython script which applies information stored in mixed managed/native assemblies to the native code being viewed in IDA. For example, this allows easy identification of functions which are directly callable by managed code ("exported" from native to managed). Normally, the result is obtaining full name and type information for code and data exposed to the interop layer of the CLR.
 
 Requires latest python construct library from https://github.com/construct/construct/releases
