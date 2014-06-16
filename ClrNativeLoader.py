@@ -11,12 +11,12 @@ import construct
 import struct
 import io
 
-IMAGE_FILE_MACHINE_I386  = 0x014c
-IMAGE_FILE_MACHINE_IA64  = 0x0200
-IMAGE_FILE_MACHINE_AMD64 = 0x8664
-
 ImageFileHeader = construct.Struct('ImageFileHeader',
-    construct.Magic(struct.pack('<H', IMAGE_FILE_MACHINE_I386)), # Machine
+    construct.Enum(construct.ULInt16('Machine'),
+        IMAGE_FILE_MACHINE_I386  = 0x014c,
+        IMAGE_FILE_MACHINE_AMD64 = 0x8664,
+        IMAGE_FILE_MACHINE_ARMNT = 0x01c4
+    ),
     construct.ULInt16('NumberOfSections'),
     construct.ULInt32('TimeDateStamp'),
     construct.ULInt32('PointerToSymbolTable'),
@@ -37,9 +37,6 @@ def MakeImageDataDirectory(name):
         construct.ULInt32('Size')
     )
 
-IMAGE_NT_OPTIONAL_HDR32_MAGIC = 0x10b
-IMAGE_NT_OPTIONAL_HDR64_MAGIC = 0x20b
-
 IMAGE_DIRECTORY_ENTRY_EXPORT         =  0 # Export Directory
 IMAGE_DIRECTORY_ENTRY_IMPORT         =  1 # Import Directory
 IMAGE_DIRECTORY_ENTRY_RESOURCE       =  2 # Resource Directory
@@ -58,7 +55,10 @@ IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR = 14 # COM Runtime descriptor
 IMAGE_NUMBEROF_DIRECTORY_ENTRIES     = 16
 
 ImageOptionalHeader = construct.Struct('ImageOptionalHeader',
-    construct.Magic(struct.pack('<H', IMAGE_NT_OPTIONAL_HDR32_MAGIC)), # Magic
+    construct.Enum(construct.ULInt16('Magic'),
+        IMAGE_NT_OPTIONAL_HDR32_MAGIC = 0x10b,
+        IMAGE_NT_OPTIONAL_HDR64_MAGIC = 0x20b
+    ),
     construct.ULInt8('MajorLinkerVersion'),
     construct.ULInt8('MinorLinkerVersion'),
     construct.ULInt32('SizeOfCode'),
@@ -98,7 +98,7 @@ ImageNtHeaders = construct.Struct('ImageNtHeaders',
 )
 
 ImageCor20Header = construct.Struct('ImageCor20Header',
-    construct.Magic(struct.pack('<L', 0x48)), # cb
+    construct.Magic(struct.pack('<L', 0x48)), # Cb
     construct.ULInt16('MajorRuntimeVersion'),
     construct.ULInt16('MinorRuntimeVersion'),
     MakeImageDataDirectory('MetaData'),
@@ -754,9 +754,10 @@ if __name__ == '__main__':
     for vTableFixup in ReadVtableFixups(clrHeader):
         #print '%8x' % (vTableFixup.VA)
         slotEa = vTableFixup.VA
+        slotAccessor = idc.Dword if vTableFixup.Type.COR_VTABLE_32BIT else idc.Qword
+        slotSize = 4 if vTableFixup.Type.COR_VTABLE_32BIT else 8
         for slot in range(vTableFixup.Count):
-            slotToken = Dword(slotEa)
-            # XXX is token extended on x64?
+            slotToken = slotAccessor(slotEa)
             table = (slotToken >> 24) & 0xff
             index = slotToken & 0xffffff
             method = metadataTables[table][index - 1]
@@ -768,4 +769,4 @@ if __name__ == '__main__':
                 idc.MakeFunction(method.VA)
             # always try to set the name (even if it's MSIL)
             idc.MakeNameEx(method.VA, methodName, SN_NOWARN | SN_NOCHECK)
-            slotEa += 4 if vTableFixup.Type.COR_VTABLE_32BIT else 8
+            slotEa += slotSize
