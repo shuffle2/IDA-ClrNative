@@ -1,7 +1,7 @@
 '''
 Shawn Hoffman
 
-TODO look into global fields for RTTI info
+TODO apply native method type information
 '''
 
 import idc
@@ -705,7 +705,7 @@ if __name__ == '__main__':
     streams = MDStreams()
     for i in range(storageHeader.iStreams):
         storageStream = StorageStream.parse(idc.GetManyBytes(storageStreamEa, 8 + MAXSTREAMNAME))
-        print '%-32s %8x %8x' % (storageStream.rcName, storageStream.iOffset, storageStream.iSize)
+        #print '%-32s %8x %8x' % (storageStream.rcName, storageStream.iOffset, storageStream.iSize)
         streams.addStream(storageStream.rcName, idc.GetManyBytes(clrMetadataEa + storageStream.iOffset, storageStream.iSize))
         storageStreamEa += ((8 + len(storageStream.rcName) + 1) + 3) & ~3
 
@@ -715,27 +715,57 @@ if __name__ == '__main__':
     
     MDTagSetupParser(metadataTableHeader)
 
+    metadataTables = [None] * len(MetadataParseTable)
+    
     assert len(MetadataParseTable) <= 64
     numRowsIdx = 0
+    print 'Processing metadata...'
     for bitPos in range(len(MetadataParseTable)):
         if metadataTableHeader.ValidTables & (1 << bitPos):
-            typeParser = MetadataParseTable[bitPos]().parse_stream
-            for rowId in range(metadataTableHeader.NumRows[numRowsIdx]):
-                row = typeParser(metadataTablesHeap)
-                if bitPos == MDTable.Method and (row.ImplFlags & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Native:
-                    stringHeap = streams.getStream('#Strings')
-                    stringHeap.seek(row.Name)
-                    methodName = construct.CString('Name').parse_stream(stringHeap)
-                    print '%4i %8x %s' % (rowId, row.VA, methodName)
-                    idc.MakeFunction(row.VA)
-                    idc.MakeNameEx(row.VA, methodName, SN_NOWARN | SN_NOCHECK)
+            rowStruct = MetadataParseTable[bitPos]()
+            metadataTables[bitPos] = construct.Array(metadataTableHeader.NumRows[numRowsIdx], rowStruct).parse_stream(metadataTablesHeap)
             numRowsIdx += 1
+    
+    def getStringFromHeap(index):
+        stringHeap = streams.getStream('#Strings')
+        stringHeap.seek(index)
+        return construct.CString('Name').parse_stream(stringHeap)
+    
+    # Apply names for any native methods
+    print 'Processing methods...'
+    for method in metadataTables[MDTable.Method]:
+        if (method.ImplFlags & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Native:
+            methodName = getStringFromHeap(method.Name)
+            #print '%8x %s' % (method.VA, methodName)
+            idc.MakeFunction(method.VA)
+            idc.MakeNameEx(method.VA, methodName, SN_NOWARN | SN_NOCHECK)
+            
+    # Apply field names (to fields with addresses)
+    print 'Processing fields...'
+    for fieldRva in metadataTables[MDTable.FieldRva]:
+        # It seems that all row indexes are 1 based
+        field = metadataTables[MDTable.Field][fieldRva.Field - 1]
+        fieldName = getStringFromHeap(field.Name)
+        #print '%8x %4x %4x %s' % (fieldRva.VA, fieldRva.Field, field.Name, fieldName)
+        idc.MakeNameEx(fieldRva.VA, fieldName, SN_NOWARN | SN_NOCHECK)
 
-    # TODO do something with the vtablefixups(?)
+    # Apply names for vtable slots
+    print 'Processing vtablefixups...'
     for vTableFixup in ReadVtableFixups(clrHeader):
-        if (vTableFixup.Type.COR_VTABLE_32BIT == False or
-           vTableFixup.Type.COR_VTABLE_64BIT == True or
-           vTableFixup.Type.COR_VTABLE_FROM_UNMANAGED == True or
-           vTableFixup.Type.COR_VTABLE_FROM_UNMANAGED_RETAIN_APPDOMAIN == False or
-           vTableFixup.Type.COR_VTABLE_CALL_MOST_DERIVED == True):
-            print '%8x abnormal Type' % (vTableFixup.VA), vTableFixup.Type
+        #print '%8x' % (vTableFixup.VA)
+        slotEa = vTableFixup.VA
+        for slot in range(vTableFixup.Count):
+            slotToken = Dword(slotEa)
+            # XXX is token extended on x64?
+            table = (slotToken >> 24) & 0xff
+            index = slotToken & 0xffffff
+            method = metadataTables[table][index - 1]
+            methodName = getStringFromHeap(method.Name)
+            #print '%3i %8x %8x %s' % (slot, slotToken, method.VA, methodName)
+            idc.MakeComm(slotEa, methodName)
+            if (method.ImplFlags & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Native:
+                # this should have been found by scanning method table, but anyways...
+                idc.MakeFunction(method.VA)
+            # always try to set the name (even if it's MSIL)
+            idc.MakeNameEx(method.VA, methodName, SN_NOWARN | SN_NOCHECK)
+            slotEa += 4 if vTableFixup.Type.COR_VTABLE_32BIT else 8
