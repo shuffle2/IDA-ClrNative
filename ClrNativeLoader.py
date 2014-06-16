@@ -214,6 +214,24 @@ class MDTable:
     # Workaround for CustomAttributeTypeTag having unmapped values
     Invalid                 = 0xff
 
+class MethodImplAttributes:
+    IL      = 0
+    Native  = 1
+    OPTIL   = 2
+    CodeTypeMask = IL | Native | OPTIL
+    
+    Managed     = 0
+    Unmanaged   = 4
+    ManagedMask = Managed | Unmanaged
+    
+    NoInlining      = 0x0008
+    ForwardRef      = 0x0010
+    Synchronized    = 0x0020
+    NoOptimization  = 0x0040
+    PreserveSig     = 0x0080
+    InternalCall    = 0x1000
+    MaxMethodImplVal= 0xffff
+
 def MakeModuleRow():
     return construct.Struct('ModuleRow',
         construct.ULInt16('Generation'),
@@ -704,8 +722,13 @@ if __name__ == '__main__':
             typeParser = MetadataParseTable[bitPos]().parse_stream
             for rowId in range(metadataTableHeader.NumRows[numRowsIdx]):
                 row = typeParser(metadataTablesHeap)
-                if bitPos == MDTable.Method and (row.ImplFlags & 3) == 1: # native method!
-                    print '%4i %8x' % (rowId, row.VA)
+                if bitPos == MDTable.Method and (row.ImplFlags & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Native:
+                    stringHeap = streams.getStream('#Strings')
+                    stringHeap.seek(row.Name)
+                    methodName = construct.CString('Name').parse_stream(stringHeap)
+                    print '%4i %8x %s' % (rowId, row.VA, methodName)
+                    idc.MakeFunction(row.VA)
+                    idc.MakeNameEx(row.VA, methodName, SN_NOWARN | SN_NOCHECK)
             numRowsIdx += 1
 
     # TODO do something with the vtablefixups(?)
