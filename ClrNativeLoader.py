@@ -66,8 +66,14 @@ ImageOptionalHeader = construct.Struct('ImageOptionalHeader',
     construct.ULInt32('SizeOfUninitializedData'),
     construct.ULInt32('AddressOfEntryPoint'),
     construct.ULInt32('BaseOfCode'),
-    construct.ULInt32('BaseOfData'),
-    construct.ULInt32('ImageBase'), # 64
+    construct.If(lambda ctx: ctx.Magic == 'IMAGE_NT_OPTIONAL_HDR32_MAGIC',
+        construct.ULInt32('BaseOfData')
+    ),
+    construct.Switch('ImageBase', lambda ctx: ctx.Magic, {
+            'IMAGE_NT_OPTIONAL_HDR32_MAGIC' : construct.ULInt32('ImageBase_'),
+            'IMAGE_NT_OPTIONAL_HDR64_MAGIC' : construct.ULInt64('ImageBase_')
+        }
+    ),
     construct.ULInt32('SectionAlignment'),
     construct.ULInt32('FileAlignment'),
     construct.ULInt16('MajorOperatingSystemVersion'),
@@ -82,10 +88,12 @@ ImageOptionalHeader = construct.Struct('ImageOptionalHeader',
     construct.ULInt32('CheckSum'),
     construct.ULInt16('Subsystem'),
     construct.ULInt16('DllCharacteristics'),
-    construct.ULInt32('SizeOfStackReserve'), # 64
-    construct.ULInt32('SizeOfStackCommit'), # 64
-    construct.ULInt32('SizeOfHeapReserve'), # 64
-    construct.ULInt32('SizeOfHeapCommit'), # 64
+    # The SizeOf fields should vary size based on Magic, but the PE header read
+    # from idautils.peutils_t().header() ALWAYS has them as 32bit. IDA bug?
+    construct.ULInt32('SizeOfStackReserve'),
+    construct.ULInt32('SizeOfStackCommit'),
+    construct.ULInt32('SizeOfHeapReserve'),
+    construct.ULInt32('SizeOfHeapCommit'),
     construct.ULInt32('LoaderFlags'),
     construct.ULInt32('NumberOfRvaAndSizes'),
     construct.Array(IMAGE_NUMBEROF_DIRECTORY_ENTRIES, MakeImageDataDirectory('DataDirectory'))
