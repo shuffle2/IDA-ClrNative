@@ -669,6 +669,7 @@ def ReadVtableFixups(ClrHeader):
     )
     numFixups = ClrHeader.VTableFixups.Size / VTableFixup.sizeof()
     VTableFixups = construct.Array(numFixups, VTableFixup)
+    if numFixups == 0: return []
     return VTableFixups.parse(idc.GetManyBytes(clrHeader.VTableFixups.VA, VTableFixups.sizeof()))
 
 class MDStreams(object):
