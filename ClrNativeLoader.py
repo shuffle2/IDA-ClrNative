@@ -277,11 +277,11 @@ class MethodImplAttributes:
     Native  = 1
     OPTIL   = 2
     CodeTypeMask = IL | Native | OPTIL
-    
+
     Managed     = 0
     Unmanaged   = 4
     ManagedMask = Managed | Unmanaged
-    
+
     NoInlining      = 0x0008
     ForwardRef      = 0x0010
     Synchronized    = 0x0020
@@ -684,7 +684,7 @@ class MDTag:
     CustomAttributeType = MetadataTagInfo([MDTable.Invalid, MDTable.Method, MDTable.MemberRef, MDTable.Invalid, MDTable.Invalid])
     ResolutionScope     = MetadataTagInfo([MDTable.Module, MDTable.ModuleRef, MDTable.AssemblyRef, MDTable.TypeRef])
     TypeOrMethodDef     = MetadataTagInfo([MDTable.TypeDef, MDTable.Method])
-    
+
 def MDTagSetupParser(MdHeader):
     MDTag.StringHeapRef.parse = construct.ULInt32 if MdHeader.HeapSizeFlags.StringHeapLarge else construct.ULInt16
     MDTag.GuidHeapRef.parse   = construct.ULInt32 if MdHeader.HeapSizeFlags.GUIDHeapLarge else construct.ULInt16
@@ -732,7 +732,7 @@ class MDStreams(object):
     def addStream(s, name, data):
         assert name not in s.streams
         s.streams[name] = io.BytesIO(data)
-        
+
 if __name__ == '__main__':
     peHeader = ImageNtHeaders.parse(idautils.peutils_t().header())
     #print peHeader
@@ -771,11 +771,11 @@ if __name__ == '__main__':
     metadataTablesHeap = streams.getStream('#~')
     metadataTableHeader = MetadataTableHeader.parse_stream(metadataTablesHeap)
     #print metadataTableHeader
-    
+
     MDTagSetupParser(metadataTableHeader)
 
     metadataTables = [None] * len(MetadataParseTable)
-    
+
     assert len(MetadataParseTable) <= 64
     numRowsIdx = 0
     print 'Processing metadata...'
@@ -784,12 +784,12 @@ if __name__ == '__main__':
             rowStruct = MetadataParseTable[bitPos]()
             metadataTables[bitPos] = construct.Array(metadataTableHeader.NumRows[numRowsIdx], rowStruct).parse_stream(metadataTablesHeap)
             numRowsIdx += 1
-    
+
     def getStringFromHeap(index):
         stringHeap = streams.getStream('#Strings')
         stringHeap.seek(index)
         return construct.CString('Name').parse_stream(stringHeap)
-    
+
     # Apply names for any native methods
     if metadataTables[MDTable.Method] is not None:
         print 'Processing methods...'
@@ -799,7 +799,7 @@ if __name__ == '__main__':
                 #print '%8x %s' % (method.VA, methodName)
                 idc.MakeFunction(method.VA)
                 idc.MakeNameEx(method.VA, methodName, SN_NOWARN | SN_NOCHECK)
-            
+
     # Apply field names (to fields with addresses)
     if metadataTables[MDTable.FieldRva] is not None:
         print 'Processing fields...'
