@@ -222,6 +222,56 @@ class MDTable:
     # Workaround for CustomAttributeTypeTag having unmapped values
     Invalid                 = 0xff
 
+    @staticmethod
+    def get_name(table):
+        return {
+            MDTable.Module : 'Module',
+            MDTable.TypeRef : 'TypeRef',
+            MDTable.TypeDef : 'TypeDef',
+            MDTable.FieldPtr : 'FieldPtr',
+            MDTable.Field : 'Field',
+            MDTable.MethodPtr : 'MethodPtr',
+            MDTable.Method : 'Method',
+            MDTable.ParamPtr : 'ParamPtr',
+            MDTable.Param : 'Param',
+            MDTable.InterfaceImpl : 'InterfaceImpl',
+            MDTable.MemberRef : 'MemberRef',
+            MDTable.Constant : 'Constant',
+            MDTable.CustomAttribute : 'CustomAttribute',
+            MDTable.FieldMarshal : 'FieldMarshal',
+            MDTable.DeclSecurity : 'DeclSecurity',
+            MDTable.ClassLayout : 'ClassLayout',
+            MDTable.FieldLayout : 'FieldLayout',
+            MDTable.StandAloneSig : 'StandAloneSig',
+            MDTable.EventMap : 'EventMap',
+            MDTable.EventPtr : 'EventPtr',
+            MDTable.Event : 'Event',
+            MDTable.PropertyMap : 'PropertyMap',
+            MDTable.PropertyPtr : 'PropertyPtr',
+            MDTable.Property : 'Property',
+            MDTable.MethodSemantics : 'MethodSemantics',
+            MDTable.MethodImpl : 'MethodImpl',
+            MDTable.ModuleRef : 'ModuleRef',
+            MDTable.TypeSpec : 'TypeSpec',
+            MDTable.ImplMap : 'ImplMap',
+            MDTable.FieldRva : 'FieldRva',
+            MDTable.EnCLog : 'EnCLog',
+            MDTable.EnCMap : 'EnCMap',
+            MDTable.Assembly : 'Assembly',
+            MDTable.AssemblyProcessor : 'AssemblyProcessor',
+            MDTable.AssemblyOS : 'AssemblyOS',
+            MDTable.AssemblyRef : 'AssemblyRef',
+            MDTable.AssemblyRefProcessor : 'AssemblyRefProcessor',
+            MDTable.AssemblyRefOS : 'AssemblyRefOS',
+            MDTable.File : 'File',
+            MDTable.ExportedType : 'ExportedType',
+            MDTable.ManifestResource : 'ManifestResource',
+            MDTable.NestedClass : 'NestedClass',
+            MDTable.GenericParam : 'GenericParam',
+            MDTable.MethodSpec : 'MethodSpec',
+            MDTable.GenericParamConstraint : 'GenericParamConstraint',
+        }.get(table, 'Invalid')
+
 class MethodImplAttributes:
     IL      = 0
     Native  = 1
@@ -741,22 +791,24 @@ if __name__ == '__main__':
         return construct.CString('Name').parse_stream(stringHeap)
     
     # Apply names for any native methods
-    print 'Processing methods...'
-    for method in metadataTables[MDTable.Method]:
-        if (method.ImplFlags & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Native:
-            methodName = getStringFromHeap(method.Name)
-            #print '%8x %s' % (method.VA, methodName)
-            idc.MakeFunction(method.VA)
-            idc.MakeNameEx(method.VA, methodName, SN_NOWARN | SN_NOCHECK)
+    if metadataTables[MDTable.Method] is not None:
+        print 'Processing methods...'
+        for method in metadataTables[MDTable.Method]:
+            if (method.ImplFlags & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Native:
+                methodName = getStringFromHeap(method.Name)
+                #print '%8x %s' % (method.VA, methodName)
+                idc.MakeFunction(method.VA)
+                idc.MakeNameEx(method.VA, methodName, SN_NOWARN | SN_NOCHECK)
             
     # Apply field names (to fields with addresses)
-    print 'Processing fields...'
-    for fieldRva in metadataTables[MDTable.FieldRva]:
-        # It seems that all row indexes are 1 based
-        field = metadataTables[MDTable.Field][fieldRva.Field - 1]
-        fieldName = getStringFromHeap(field.Name)
-        #print '%8x %4x %4x %s' % (fieldRva.VA, fieldRva.Field, field.Name, fieldName)
-        idc.MakeNameEx(fieldRva.VA, fieldName, SN_NOWARN | SN_NOCHECK)
+    if metadataTables[MDTable.FieldRva] is not None:
+        print 'Processing fields...'
+        for fieldRva in metadataTables[MDTable.FieldRva]:
+            # It seems that all row indexes are 1 based
+            field = metadataTables[MDTable.Field][fieldRva.Field - 1]
+            fieldName = getStringFromHeap(field.Name)
+            #print '%8x %4x %4x %s' % (fieldRva.VA, fieldRva.Field, field.Name, fieldName)
+            idc.MakeNameEx(fieldRva.VA, fieldName, SN_NOWARN | SN_NOCHECK)
 
     # Apply names for vtable slots
     print 'Processing vtablefixups...'
