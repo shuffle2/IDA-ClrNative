@@ -1,13 +1,9 @@
-'''
-Shawn Hoffman
-
-TODO apply native method type information
-'''
-
+#!/usr/bin/env python3
+# TODO apply native method type information
 import idc
 import idaapi
 import idautils
-import construct
+import construct_legacy as construct
 import struct
 import io
 
@@ -153,7 +149,7 @@ StorageStream = construct.Struct('StorageStream',
     # offset from StorageSignature.lSignature
     construct.ULInt32('iOffset'),
     construct.ULInt32('iSize'),
-    construct.CString('rcName')
+    construct.CString('rcName', encoding='utf8')
 )
 
 MetadataTableHeader = construct.Struct('MetadataTableHeader',
@@ -690,7 +686,7 @@ def MDTagSetupParser(MdHeader):
     MDTag.GuidHeapRef.parse   = construct.ULInt32 if MdHeader.HeapSizeFlags.GUIDHeapLarge else construct.ULInt16
     MDTag.BlobHeapRef.parse   = construct.ULInt32 if MdHeader.HeapSizeFlags.BlobHeapLarge else construct.ULInt16
     # for each index type,
-    for v in MDTag.__dict__.itervalues():
+    for v in MDTag.__dict__.values():
         if isinstance(v, MetadataTableIndex) or isinstance(v, MetadataTagInfo):
             numRowsIdx = 0
             needsLarge = False
@@ -720,7 +716,7 @@ def ReadVtableFixups(ClrHeader):
     numFixups = ClrHeader.VTableFixups.Size / VTableFixup.sizeof()
     VTableFixups = construct.Array(numFixups, VTableFixup)
     if numFixups == 0: return []
-    return VTableFixups.parse(idc.GetManyBytes(clrHeader.VTableFixups.VA, VTableFixups.sizeof()))
+    return VTableFixups.parse(idc.get_bytes(clrHeader.VTableFixups.VA, VTableFixups.sizeof()))
 
 class MDStreams(object):
     def __init__(s):
@@ -735,42 +731,42 @@ class MDStreams(object):
 
 if __name__ == '__main__':
     peHeader = ImageNtHeaders.parse(idautils.peutils_t().header())
-    #print peHeader
+    #print(peHeader)
 
     clrDirectory = peHeader.ImageOptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR]
-    #print '%8x %8x' % (clrDirectory.VA, clrDirectory.Size)
+    print('%8x %8x' % (clrDirectory.VA, clrDirectory.Size))
     #Jump(clrHeaderEa)
 
-    clrHeader = ImageCor20Header.parse(idc.GetManyBytes(clrDirectory.VA, ImageCor20Header.sizeof()))
-    #print clrHeader
+    clrHeader = ImageCor20Header.parse(idc.get_bytes(clrDirectory.VA, ImageCor20Header.sizeof()))
+    #print(clrHeader)
 
     if clrHeader.Flags.COMIMAGE_FLAGS_NATIVE_ENTRYPOINT:
         idc.AddEntryPoint(clrHeader.EntryPoint.VA, clrHeader.EntryPoint.VA, 'ClrEntryPointNative', True)
 
     clrMetadataEa = clrHeader.MetaData.VA
     clrVTableFixupsEa = clrHeader.VTableFixups.VA
-    print 'metadata %8x vtablefixups %8x' % (clrMetadataEa, clrVTableFixupsEa)
+    print('metadata %8x vtablefixups %8x' % (clrMetadataEa, clrVTableFixupsEa))
 
     #Jump(clrMetadataEa)
 
-    clrMetadataHeader = StorageSignature.parse(idc.GetManyBytes(clrMetadataEa, StorageSignature.sizeof()))
-    #print clrMetadataHeader
+    clrMetadataHeader = StorageSignature.parse(idc.get_bytes(clrMetadataEa, StorageSignature.sizeof()))
+    #print(clrMetadataHeader)
 
     storageHeaderEa = clrMetadataEa + StorageSignature.sizeof() + ((clrMetadataHeader.iVersionString + 3) & ~3)
-    storageHeader = StorageHeader.parse(idc.GetManyBytes(storageHeaderEa, StorageHeader.sizeof()))
-    #print storageHeader
+    storageHeader = StorageHeader.parse(idc.get_bytes(storageHeaderEa, StorageHeader.sizeof()))
+    #print(storageHeader)
 
     storageStreamEa = storageHeaderEa + StorageHeader.sizeof()
     streams = MDStreams()
     for i in range(storageHeader.iStreams):
-        storageStream = StorageStream.parse(idc.GetManyBytes(storageStreamEa, 8 + MAXSTREAMNAME))
-        #print '%-32s %8x %8x' % (storageStream.rcName, storageStream.iOffset, storageStream.iSize)
-        streams.addStream(storageStream.rcName, idc.GetManyBytes(clrMetadataEa + storageStream.iOffset, storageStream.iSize))
+        storageStream = StorageStream.parse(idc.get_bytes(storageStreamEa, 8 + MAXSTREAMNAME))
+        #print('%-32s %8x %8x' % (storageStream.rcName, storageStream.iOffset, storageStream.iSize))
+        streams.addStream(storageStream.rcName, idc.get_bytes(clrMetadataEa + storageStream.iOffset, storageStream.iSize))
         storageStreamEa += ((8 + len(storageStream.rcName) + 1) + 3) & ~3
 
     metadataTablesHeap = streams.getStream('#~')
     metadataTableHeader = MetadataTableHeader.parse_stream(metadataTablesHeap)
-    #print metadataTableHeader
+    #print(metadataTableHeader)
 
     MDTagSetupParser(metadataTableHeader)
 
@@ -778,7 +774,7 @@ if __name__ == '__main__':
 
     assert len(MetadataParseTable) <= 64
     numRowsIdx = 0
-    print 'Processing metadata...'
+    print('Processing metadata...')
     for bitPos in range(len(MetadataParseTable)):
         if metadataTableHeader.ValidTables & (1 << bitPos):
             rowStruct = MetadataParseTable[bitPos]()
@@ -788,32 +784,32 @@ if __name__ == '__main__':
     def getStringFromHeap(index):
         stringHeap = streams.getStream('#Strings')
         stringHeap.seek(index)
-        return construct.CString('Name').parse_stream(stringHeap)
+        return construct.CString('Name', encoding='utf8').parse_stream(stringHeap)
 
     # Apply names for any native methods
     if metadataTables[MDTable.Method] is not None:
-        print 'Processing methods...'
+        print('Processing methods...')
         for method in metadataTables[MDTable.Method]:
             if (method.ImplFlags & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Native:
                 methodName = getStringFromHeap(method.Name)
-                #print '%8x %s' % (method.VA, methodName)
-                idc.MakeFunction(method.VA)
-                idc.MakeNameEx(method.VA, methodName, SN_NOWARN | SN_NOCHECK)
+                #print('%8x %s' % (method.VA, methodName))
+                ida_funcs.add_func(method.VA)
+                idc.set_name(method.VA, methodName, SN_NOWARN | SN_NOCHECK)
 
     # Apply field names (to fields with addresses)
     if metadataTables[MDTable.FieldRva] is not None:
-        print 'Processing fields...'
+        print('Processing fields...')
         for fieldRva in metadataTables[MDTable.FieldRva]:
             # It seems that all row indexes are 1 based
             field = metadataTables[MDTable.Field][fieldRva.Field - 1]
             fieldName = getStringFromHeap(field.Name)
-            #print '%8x %4x %4x %s' % (fieldRva.VA, fieldRva.Field, field.Name, fieldName)
-            idc.MakeNameEx(fieldRva.VA, fieldName, SN_NOWARN | SN_NOCHECK)
+            #print('%8x %4x %4x %s' % (fieldRva.VA, fieldRva.Field, field.Name, fieldName))
+            idc.set_name(fieldRva.VA, fieldName, SN_NOWARN | SN_NOCHECK)
 
     # Apply names for vtable slots
-    print 'Processing vtablefixups...'
+    print('Processing vtablefixups...')
     for vTableFixup in ReadVtableFixups(clrHeader):
-        #print '%8x' % (vTableFixup.VA)
+        #print('%8x' % (vTableFixup.VA))
         slotEa = vTableFixup.VA
         slotAccessor = idc.Dword if vTableFixup.Type.COR_VTABLE_32BIT else idc.Qword
         slotSize = 4 if vTableFixup.Type.COR_VTABLE_32BIT else 8
@@ -823,11 +819,11 @@ if __name__ == '__main__':
             index = slotToken & 0xffffff
             method = metadataTables[table][index - 1]
             methodName = getStringFromHeap(method.Name)
-            #print '%3i %8x %8x %s' % (slot, slotToken, method.VA, methodName)
+            #print('%3i %8x %8x %s' % (slot, slotToken, method.VA, methodName))
             idc.MakeComm(slotEa, methodName)
             if (method.ImplFlags & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Native:
                 # this should have been found by scanning method table, but anyways...
-                idc.MakeFunction(method.VA)
+                ida_funcs.add_func(method.VA)
             # always try to set the name (even if it's MSIL)
-            idc.MakeNameEx(method.VA, methodName, SN_NOWARN | SN_NOCHECK)
+            idc.set_name(method.VA, methodName, SN_NOWARN | SN_NOCHECK)
             slotEa += slotSize
