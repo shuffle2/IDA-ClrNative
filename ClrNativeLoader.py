@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # TODO apply native method type information
-import idc
+import construct_legacy as construct
+import ida_entry
 import idaapi
 import idautils
-import construct_legacy as construct
-import struct
+import idc
 import io
+import struct
 
 ImageFileHeader = construct.Struct('ImageFileHeader',
     construct.Enum(construct.ULInt16('Machine'),
@@ -716,7 +717,7 @@ def ReadVtableFixups(ClrHeader):
     numFixups = ClrHeader.VTableFixups.Size / VTableFixup.sizeof()
     VTableFixups = construct.Array(numFixups, VTableFixup)
     if numFixups == 0: return []
-    return VTableFixups.parse(idc.get_bytes(clrHeader.VTableFixups.VA, VTableFixups.sizeof()))
+    return VTableFixups.parse(idc.get_bytes(ClrHeader.VTableFixups.VA, int(VTableFixups.sizeof())))
 
 class MDStreams(object):
     def __init__(s):
@@ -741,7 +742,7 @@ if __name__ == '__main__':
     #print(clrHeader)
 
     if clrHeader.Flags.COMIMAGE_FLAGS_NATIVE_ENTRYPOINT:
-        idc.AddEntryPoint(clrHeader.EntryPoint.VA, clrHeader.EntryPoint.VA, 'ClrEntryPointNative', True)
+        ida_entry.add_entry(clrHeader.EntryPoint.VA, clrHeader.EntryPoint.VA, 'ClrEntryPointNative', True)
 
     clrMetadataEa = clrHeader.MetaData.VA
     clrVTableFixupsEa = clrHeader.VTableFixups.VA
@@ -811,7 +812,7 @@ if __name__ == '__main__':
     for vTableFixup in ReadVtableFixups(clrHeader):
         #print('%8x' % (vTableFixup.VA))
         slotEa = vTableFixup.VA
-        slotAccessor = idc.Dword if vTableFixup.Type.COR_VTABLE_32BIT else idc.Qword
+        slotAccessor = idc.get_wide_dword if vTableFixup.Type.COR_VTABLE_32BIT else idc.get_qword
         slotSize = 4 if vTableFixup.Type.COR_VTABLE_32BIT else 8
         for slot in range(vTableFixup.Count):
             slotToken = slotAccessor(slotEa)
@@ -820,7 +821,7 @@ if __name__ == '__main__':
             method = metadataTables[table][index - 1]
             methodName = getStringFromHeap(method.Name)
             #print('%3i %8x %8x %s' % (slot, slotToken, method.VA, methodName))
-            idc.MakeComm(slotEa, methodName)
+            idc.set_cmt(slotEa, methodName, 0)
             if (method.ImplFlags & MethodImplAttributes.CodeTypeMask) == MethodImplAttributes.Native:
                 # this should have been found by scanning method table, but anyways...
                 ida_funcs.add_func(method.VA)
